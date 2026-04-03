@@ -46,6 +46,7 @@ type Settings = {
   sounds: boolean;
   theme: "dark" | "light";
   twoFactor: boolean;
+  twoFactorEmail: string;
   showPhone: boolean;
   showOnline: boolean;
 };
@@ -55,6 +56,7 @@ const DEFAULT_SETTINGS: Settings = {
   sounds: true,
   theme: "dark",
   twoFactor: false,
+  twoFactorEmail: "",
   showPhone: false,
   showOnline: true,
 };
@@ -282,7 +284,11 @@ export default function Index() {
 
   // Profile edit state
   const [editingProfile, setEditingProfile] = useState(false);
-  const [profileForm, setProfileForm] = useState({ name: "", username: "", phone: "", about: "" });
+  const [profileForm, setProfileForm] = useState(() => {
+    const saved = localStorage.getItem("zumergram_me");
+    const u: User | null = saved ? JSON.parse(saved) : null;
+    return { name: u?.name || "", username: (u?.username || "").replace("@", ""), phone: u?.phone || "", about: u?.about || "" };
+  });
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Gallery state
@@ -295,9 +301,17 @@ export default function Index() {
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
 
-  // Persist settings
+  // Persist settings + apply theme
   useEffect(() => {
     localStorage.setItem("zumergram_settings", JSON.stringify(settings));
+    const root = document.documentElement;
+    if (settings.theme === "light") {
+      root.classList.remove("dark");
+      root.classList.add("light");
+    } else {
+      root.classList.remove("light");
+      root.classList.add("dark");
+    }
   }, [settings]);
 
   const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
@@ -333,7 +347,12 @@ export default function Index() {
   // Profile editing
   const startEditProfile = () => {
     if (!me) return;
-    setProfileForm({ name: me.name, username: me.username.replace("@", ""), phone: me.phone, about: me.about });
+    setProfileForm({
+      name: me.name,
+      username: me.username.replace("@", ""),
+      phone: me.phone,
+      about: me.about,
+    });
     setEditingProfile(true);
   };
 
@@ -346,16 +365,20 @@ export default function Index() {
       name: profileForm.name.trim(),
       username: "@" + profileForm.username.replace("@", ""),
       phone: profileForm.phone.trim(),
-      about: profileForm.about.trim() || me.about,
+      about: profileForm.about.trim(),
       avatar: initials,
     };
     // Update in users list
     const saved = localStorage.getItem("zumergram_users");
     const users: (User & { password?: string })[] = saved ? JSON.parse(saved) : [];
     const idx = users.findIndex(u => u.username === me.username);
-    if (idx !== -1) { users[idx] = { ...users[idx], ...updated }; localStorage.setItem("zumergram_users", JSON.stringify(users)); }
+    if (idx !== -1) {
+      users[idx] = { ...users[idx], ...updated };
+      localStorage.setItem("zumergram_users", JSON.stringify(users));
+    }
     localStorage.setItem("zumergram_me", JSON.stringify(updated));
     setMe(updated);
+    setProfileForm({ name: updated.name, username: updated.username.replace("@", ""), phone: updated.phone, about: updated.about });
     setEditingProfile(false);
   };
 
@@ -492,27 +515,48 @@ export default function Index() {
               <h3 className="font-bold text-base mb-4">Тема оформления</h3>
               <div className="space-y-2">
                 {(["dark", "light"] as const).map(t => (
-                  <button key={t} onClick={() => updateSetting("theme", t)}
+                  <button key={t} onClick={() => { updateSetting("theme", t); }}
                     className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-all ${settings.theme === t ? "border-blue-400/60 bg-blue-500/10" : "border-white/10 hover:bg-white/5"}`}>
-                    <Icon name={t === "dark" ? "Moon" : "Sun"} size={18} className={settings.theme === t ? "text-blue-400" : "text-muted-foreground"} />
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${t === "dark" ? "bg-slate-800 border border-slate-700" : "bg-white border border-gray-200"}`}>
+                      <Icon name={t === "dark" ? "Moon" : "Sun"} size={16} className={t === "dark" ? "text-blue-300" : "text-yellow-500"} />
+                    </div>
                     <span className="text-sm font-medium">{t === "dark" ? "Тёмная" : "Светлая"}</span>
-                    {settings.theme === t && <Icon name="Check" size={14} className="text-blue-400 ml-auto" />}
+                    {settings.theme === t
+                      ? <Icon name="CheckCircle" size={16} className="text-blue-400 ml-auto" />
+                      : <div className="ml-auto w-4 h-4 rounded-full border border-white/20" />
+                    }
                   </button>
                 ))}
               </div>
+              <p className="text-xs text-muted-foreground mt-3 text-center">Изменение применяется сразу</p>
             </>
           )}
           {activeSettingModal === "security" && (
             <>
               <h3 className="font-bold text-base mb-4">Безопасность</h3>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between mb-2">
+              <div className="space-y-3 max-h-[70vh] overflow-y-auto">
+                <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">Двухфакторная аутентификация</p>
-                    <p className="text-xs text-muted-foreground">Дополнительная защита аккаунта</p>
+                    <p className="text-xs text-muted-foreground">Подтверждение входа по email</p>
                   </div>
                   <Toggle value={settings.twoFactor} onChange={v => updateSetting("twoFactor", v)} />
                 </div>
+                {settings.twoFactor && (
+                  <div className="bg-blue-500/10 border border-blue-400/20 rounded-2xl p-3">
+                    <label className="text-xs text-muted-foreground mb-1 block">Email для подтверждения</label>
+                    <input
+                      type="email"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400/50 placeholder:text-muted-foreground/40"
+                      placeholder="your@email.com"
+                      value={settings.twoFactorEmail}
+                      onChange={e => updateSetting("twoFactorEmail", e.target.value)}
+                    />
+                    {settings.twoFactorEmail && (
+                      <p className="text-xs text-green-400 mt-1.5">✓ Email сохранён</p>
+                    )}
+                  </div>
+                )}
                 <div className="border-t border-white/10 pt-3">
                   <p className="text-sm font-medium mb-3">Изменить пароль</p>
                   {[
