@@ -128,7 +128,7 @@
 
 /* Message bubble */
 .msg-out {
-  background: linear-gradient(135deg, hsl(262, 100%, 65%), hsl(320, 100%, 60%));
+  background: linear-gradient(135deg, hsl(220, 90%, 55%), hsl(196, 100%, 50%));
 }
 .msg-in {
   background: hsl(var(--card));
